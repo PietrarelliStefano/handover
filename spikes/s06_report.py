@@ -23,6 +23,7 @@ TYPICAL_AUDIO_S = 28 * 12
 # Budget per la trascrizione dentro i 15 minuti di §12 (foto e video in parallelo).
 BUDGET_S = 5 * 60
 REPO_ROOT = Path(__file__).resolve().parent.parent
+MANUAL_MARK = "<!-- analisi manuale: sotto questa riga il testo non viene rigenerato -->"
 
 
 def fmt_s(x) -> str:
@@ -248,8 +249,12 @@ def main() -> None:
           "- Whisper non separa i parlanti: la seconda voce fuori campo (§6.3) è trascritta insieme all'agente.",
           "- Spike da ripetere su `11.18 - LISSONE` (§14).", ""]
 
+    # la parte scritta a mano (dopo il marcatore) sopravvive alle rigenerazioni
+    manual = ""
+    if args.out.exists() and MANUAL_MARK in args.out.read_text():
+        manual = args.out.read_text().split(MANUAL_MARK, 1)[1]
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text("\n".join(L))
+    args.out.write_text("\n".join(L) + ("\n" + MANUAL_MARK + manual if manual else ""))
     print(f"Scritto {args.out}")
 
 
