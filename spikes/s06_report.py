@@ -76,6 +76,13 @@ def decide(compare: dict, trans: dict) -> tuple[str, list[str]]:
     return "turbo", why + ["Token critici non migliori con large-v3: si tiene il default turbo, più veloce."]
 
 
+def recommend(compare: dict, model: str) -> str | None:
+    vs = {k: e for k, e in compare["variants"].items() if k.split("+")[0] == model}
+    if not vs:
+        return None
+    return min(vs, key=lambda k: (crit_count(vs[k]["clips"]), vs[k]["clips"]["wer"] or 1, k.count("+")))
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("clip_dir", nargs="?", type=Path, default=DEFAULT_CLIP_DIR)
@@ -90,6 +97,8 @@ def main() -> None:
     compare = load_json(res / "compare.json") if (res / "compare.json").exists() else None
     takes = {p.stem.removeprefix("takes-"): load_json(p) for p in sorted(res.glob("takes-*.json"))}
     subs = load_json(wd / "reel" / "subs_ocr.json") if (wd / "reel" / "subs_ocr.json").exists() else None
+    vad = load_json(res / "vad.json") if (res / "vad.json").exists() else None
+    reel_map = load_json(res / "reel_map.json") if (res / "reel_map.json").exists() else None
     machine = (mezz or {}).get("summary", {}).get("machine") or next(iter(trans.values()), {}).get("machine", {})
 
     L: list[str] = []
@@ -144,6 +153,30 @@ def main() -> None:
         L.append("Non eseguito.")
     L.append("")
 
+    # 3 bis. VAD
+    L += ["## 3 bis. Parlato: VAD e classificazione A-roll / b-roll (§6.1)", ""]
+    if vad:
+        broll = [k for k, c in vad["clips"].items() if c["kind"] == "broll"]
+        rtf = (trans.get("turbo") or {}).get("clips_rtf")
+        saved = f", circa {vad['broll_audio_s'] * rtf:.0f} s di trascrizione turbo risparmiati" if rtf else ""
+        L.append(f"Silero VAD v5 (ONNX) su {len(vad['clips'])} clip in {vad['vad_total_s']} s. "
+                 f"A-roll se il parlato supera {vad['params']['min_speech_s']} s: **{len(vad['aroll'])} A-roll, "
+                 f"{len(broll)} b-roll** ({vad['broll_audio_s']} s di audio che Whisper può saltare{saved}).")
+        L.append("")
+        L.append(table(["clip", "tipo", "parlato", "durata"], [
+            [k, "A-roll" if c["kind"] == "aroll" else "b-roll", fmt_s(c["speech_s"]), fmt_s(c["duration_s"])]
+            for k, c in vad["clips"].items()]))
+        L.append("")
+        L.append("Testo tolto dalle varianti `+vad` (clip b-roll, parole fuori dal parlato, segmenti che Whisper "
+                 "stesso giudica non parlato). Da controllare: dovrebbe essere solo testo inventato da Whisper.")
+        L.append("")
+        for v, info in vad["variants"].items():
+            items = [f"`{clip}` {it}" for clip, its in info["removed"].items() for it in its]
+            L.append(f"- **{v}** ({len(items)}): " + ("; ".join(items) if items else "nulla"))
+    else:
+        L.append("Non eseguito.")
+    L.append("")
+
     # 4. Qualità
     L += ["## 4. Qualità rispetto ai sottotitoli del reel", ""]
     if compare:
@@ -152,6 +185,9 @@ def main() -> None:
                  + (f", OCR {subs['engine']} su {subs['frames']} fotogrammi" if subs else "") + "). "
                  + ("Corretto a mano sul reel." if src == "reference_manual.txt" else
                     "**OCR non ricontrollato a mano**: gli errori OCR finiscono nel WER di entrambi i modelli."))
+        L.append("")
+        L.append("Varianti: `+prompt` = glossario come prompt di Whisper (ricavato dagli errori del primo giro "
+                 "su questo shooting: il guadagno va confermato su un altro); `+vad` = trascrizione filtrata dalla VAD.")
         L.append("")
         L.append("Normalizzazione: minuscole, senza punteggiatura né accenti, numeri in lettere → cifre, "
                  "unità (€, euro, m², metri…) e filler (ehm, eh) esclusi.")
@@ -198,14 +234,17 @@ def main() -> None:
     # 5. Take
     L += ["## 5. Take ripetute tra file diversi (§6.2)", ""]
     if takes:
-        L.append(table(["variante", "frasi", "battute", "con più take", "euristica = reel", "coppie quasi simili"], [
-            [k, t["phrases"], len(t["battute"]), t["multi_take"], f"{t['heuristic_agree']}/{t['heuristic_judged']}",
-             len(t["near_misses"])] for k, t in takes.items()]))
+        L.append(table(["variante", "frasi", "spezzate", "battute", "con più take", "take del reel da",
+                        "euristica = reel", "coppie quasi simili"], [
+            [k, t["phrases"], len(t.get("split", [])), len(t["battute"]), t["multi_take"], t.get("reel_source") or "—",
+             f"{t['heuristic_agree']}/{t['heuristic_judged']}", len(t["near_misses"])] for k, t in takes.items()]))
         L.append("")
-        L.append("Regola: similarità ≥ 0,7 (specifica) oppure frase interrotta contenuta nell'altra (≥ 0,8). "
-                 "\"Euristica\" = ultima take completa, senza LLM; \"reel\" = take che compare nei sottotitoli.")
+        L.append("Regole: similarità ≥ 0,7 (specifica); stesso attacco (prime 8 parole, ≤ 2 errori); take interrotta "
+                 "agganciata senza fare da ponte. Le frasi lunghe dette d'un fiato vengono spezzate dove ci si allineano "
+                 "le altre take. \"Euristica\" = ultima take completa, senza LLM; \"reel\" = take usata nel reel "
+                 "(dalla mappa audio se c'è, altrimenti stimata dal testo).")
         L.append("")
-        k0 = "turbo" if "turbo" in takes else next(iter(takes))
+        k0 = next((k for k in ("turbo+prompt+vad", "turbo+vad", "turbo") if k in takes), next(iter(takes)))
         t = takes[k0]
         L.append(f"### Battute con le take candidate ({k0})")
         L.append("")
@@ -229,6 +268,20 @@ def main() -> None:
         L.append("Non eseguito.")
     L.append("")
 
+    # 5 bis. Mappa audio del reel
+    L += ["## 5 bis. Da quali clip viene l'audio del reel", ""]
+    if reel_map:
+        L.append(f"Correlazione della forma d'onda (finestre di {reel_map['win_s']} s): {reel_map['covered_s']} s "
+                 f"su {reel_map['reel_s']} s del reel ricondotti alle clip, in {len(reel_map['segments'])} segmenti. "
+                 "Il resto è musica sola o audio non preso dalle clip.")
+        L.append("")
+        L.append(table(["reel", "clip", "nella clip", "NCC"], [
+            [f"{s['reel_start']:.2f}–{s['reel_end']:.2f}", s["clip"], f"{s['clip_start']:.2f}–{s['clip_end']:.2f}",
+             f"{s['ncc_mean']:.2f}"] for s in reel_map["segments"]]))
+    else:
+        L.append("Non eseguito.")
+    L.append("")
+
     # 6. Decisione
     L += ["## 6. Decisione: turbo o large-v3", ""]
     if compare and trans:
@@ -236,6 +289,11 @@ def main() -> None:
         L.append(f"**Scelta: {choice}.**")
         L.append("")
         L += [f"- {w}" for w in why]
+        best = recommend(compare, choice)
+        if best:
+            L.append("")
+            L.append(f"Configurazione con meno errori per {choice}: **`{best}`** "
+                     "(prima i token critici sulle clip, poi il WER sulle clip).")
     else:
         L.append("Non decidibile: mancano trascrizioni o confronto.")
     L.append("")

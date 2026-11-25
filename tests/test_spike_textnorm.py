@@ -51,3 +51,10 @@ def test_align_jump_across_clips_and_takes():
     ref = "questo trilocale costa 188000 sei un agente ha 3 locali".split()
     al = align_jump(ref, hyp, {4, 7}, barrier=sep)
     assert al.errors == 1 and [o for o in al.ops if o[0] != "ok"] == [("sub", "188000", "180000")]
+
+
+def test_normalize_words_keeps_word_index():
+    from textnorm import normalize_words
+    words = ["Mi", "chiederai", "il", "prezzo,", "188", "mila", "euro,", "ehm", "l'appartamento"]
+    assert normalize_words(words) == [("mi", 0), ("chiederai", 1), ("il", 2), ("prezzo", 3), ("188000", 4),
+                                      ("l", 8), ("appartamento", 8)]

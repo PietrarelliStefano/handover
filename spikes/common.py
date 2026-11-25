@@ -24,6 +24,12 @@ MODELS = {
 # Glossario (§6.5): nomi propri attesi, usati per contare gli errori sui nomi.
 GLOSSARY = ["Simone", "Venezia", "Immobiliare Venezia", "Bernareggio"]
 
+# Prompt per Whisper (§6.5, glossario per agente): agenzia, agente, comune dello shooting e due
+# termini corretti dopo il primo giro dello spike ("in vendita" sentito "in merita", "VMC" → "WMC").
+# Simula il glossario che cresce con le correzioni in review; essendo ricavato da questo shooting,
+# la verifica onesta del guadagno va fatta su un altro (11.18 - LISSONE).
+WHISPER_PROMPT = "Immobiliare Venezia, Simone Venezia. Appartamento in vendita a Bernareggio, classe A, VMC."
+
 
 def work_dir(clip_dir: Path) -> Path:
     shooting = clip_dir.parent.name.replace(" ", "")

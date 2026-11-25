@@ -308,3 +308,16 @@ def align_jump(ref: list[str], hyp: list[str], boundaries: set[int], jump_cost: 
     ops.reverse()
     pos.reverse()
     return JumpAlignment(ops=ops, hyp_start=j, hyp_end=j_end, hyp_pos=pos)
+
+
+def normalize_words(words: list[str]) -> list[tuple[str, int]]:
+    """Come normalize_tokens, ma per parola: ogni token porta l'indice della parola di origine
+    (serve a spezzare una frase mantenendo i timestamp). '188 mila' → ('188000', i)."""
+    out: list[tuple[str, int]] = []
+    for i, w in enumerate(words):
+        for t in normalize_tokens(w):
+            if out and out[-1][0].isdigit() and t in ("mila", "000"):
+                out[-1] = (str(int(out[-1][0]) * 1000), out[-1][1])
+            else:
+                out.append((t, i))
+    return out

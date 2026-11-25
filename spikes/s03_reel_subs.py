@@ -103,6 +103,7 @@ def main() -> None:
     ap.add_argument("--reel", type=Path)
     ap.add_argument("--fps", type=float, default=5.0)
     ap.add_argument("--engine", default="auto", choices=["auto", "vision", "tesseract"])
+    ap.add_argument("--force", action="store_true", help="rifà l'OCR anche se esiste già")
     args = ap.parse_args()
 
     clip_dir: Path = args.clip_dir
@@ -110,6 +111,9 @@ def main() -> None:
     if not reel.exists():
         raise SystemExit(f"Reel non trovato: {reel}")
     wd = work_dir(clip_dir)
+    if (wd / "reel" / "subs_ocr.json").exists() and not args.force:
+        print("OCR del reel già fatto, salto (usa --force per rifarlo)")
+        return
     frames_dir = out_path(wd / "reel" / "frames" / "x", clip_dir).parent
     engine_name, engine = pick_engine(args.engine)
 

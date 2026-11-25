@@ -37,10 +37,14 @@ def main() -> None:
     ap.add_argument("--encoder", default="h264_videotoolbox", help="libx264 solo per provare fuori dal Mac")
     ap.add_argument("--bitrate", default="40M")
     ap.add_argument("--no-hw-decode", action="store_true")
+    ap.add_argument("--force", action="store_true", help="rifà i mezzanine anche se esistono")
     args = ap.parse_args()
 
     clip_dir: Path = args.clip_dir
     wd = work_dir(clip_dir)
+    if (wd / "results" / "mezzanine.json").exists() and not args.force:
+        print("Mezzanine già fatti, salto (usa --force per rifarli)")
+        return
     infos = probe_folder(clip_dir)
     if not infos:
         raise SystemExit(f"Nessuna clip in {clip_dir}")

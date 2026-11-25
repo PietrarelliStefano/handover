@@ -16,7 +16,7 @@ import sys
 import time
 from pathlib import Path
 
-from common import (DEFAULT_CLIP_DIR, GLOSSARY, MODELS, default_reel, machine_info, out_path, run,
+from common import (DEFAULT_CLIP_DIR, MODELS, WHISPER_PROMPT, default_reel, machine_info, out_path, run,
                     save_json, work_dir)
 from handover.ingest.probe import find_videos
 
@@ -77,6 +77,7 @@ def main() -> None:
     ap.add_argument("--reel", type=Path)
     ap.add_argument("--models", nargs="+", default=list(MODELS))
     ap.add_argument("--prompt", action="store_true", help="usa il glossario come initial_prompt (§6.5)")
+    ap.add_argument("--force", action="store_true", help="rifà anche le varianti già trascritte")
     ap.add_argument("--_worker", help=argparse.SUPPRESS)
     args = ap.parse_args()
 
@@ -105,9 +106,12 @@ def main() -> None:
         wavs.append(str(dst))
     audio_extract_s = time.perf_counter() - t0
 
-    prompt = ", ".join(GLOSSARY) + "." if args.prompt else None
+    prompt = WHISPER_PROMPT if args.prompt else None
     for key in args.models:
         variant = key + ("+prompt" if prompt else "")
+        if (wd / "results" / f"transcribe-{variant}.json").exists() and not args.force:
+            print(f"[{variant}] già trascritto, salto (usa --force per rifarlo)")
+            continue
         tdir = out_path(wd / "transcripts" / variant / "x", clip_dir).parent
         job = {"model_key": key, "repo": MODELS[key], "audio_files": wavs, "out_dir": str(tdir), "prompt": prompt}
         t1 = time.perf_counter()

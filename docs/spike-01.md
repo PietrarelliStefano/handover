@@ -226,3 +226,12 @@ Mezzanine 127 s + trascrizione turbo 54 s + caricamento modello: circa 3 minuti 
 3. VAD prima della trascrizione e filtro delle allucinazioni.
 4. Riscrivere il raggruppamento delle take (punti 2 e 3) e misurare quale take è nel reel con la correlazione audio, così l'euristica "ultima take completa" si valuta su dati certi.
 5. Ripetere su `11.18 - LISSONE`.
+
+### Stato (25 novembre, dopo il primo giro)
+
+I punti 2–4 sono implementati negli script, da rieseguire sul Mac con `./spikes/run_spike01.sh` (i passi già fatti vengono saltati):
+
+- `s02b_vad.py`: Silero VAD, A-roll / b-roll, varianti `+vad` senza rifare Whisper.
+- `s02_transcribe.py --prompt`: varianti `+prompt` col glossario.
+- `s03b_reel_match.py`: mappa audio reel → clip, per sapere quale take è nel reel.
+- `s05_takes.py` riscritto: frasi lunghe spezzate guidate dalle altre take, regola "stesso attacco", take interrotte senza unioni a catena. Verificato in `tests/test_spike_takes.py` sulle frasi reali del primo giro: le 5 take della zona notte (compresa `Z50_6399`) finiscono in una battuta sola; domanda, risposta e "sto cercando…" dell'apertura sono battute distinte. Restano isolate le take in cui l'agente cambia le parole (`Z50_6406`, `Z50_6407`, «guarda appena acquisito…» di `Z50_6413`): lì servirà la scelta con l'LLM (§6.2.4).
