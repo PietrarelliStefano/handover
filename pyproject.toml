@@ -5,6 +5,9 @@ description = "Pipeline locale: shooting immobiliare → foto HDR e reel 9:16"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "typer>=0.12",
+    "numpy>=1.26",
+    "onnxruntime>=1.18",
+    "mlx-whisper>=0.4; sys_platform == 'darwin' and platform_machine == 'arm64'",
 ]
 
 [project.scripts]
@@ -14,9 +17,6 @@ handover = "handover.cli:app"
 dev = ["pytest>=8"]
 # Solo per lo spike, e solo sul Mac (Apple Silicon): `uv sync --group spike`
 spike = [
-    "numpy>=1.26",
-    "onnxruntime>=1.18",
-    "mlx-whisper>=0.4; sys_platform == 'darwin' and platform_machine == 'arm64'",
     "ocrmac>=1.0; sys_platform == 'darwin'",
 ]
 

@@ -1,0 +1,11 @@
+{
+  "agente": "Simone Venezia",
+  "agenzia": "Immobiliare Venezia",
+  "template": "venezia-v1",
+  "nomi": ["Simone", "Venezia", "Immobiliare Venezia", "Bernareggio", "Lissone"],
+  "correzioni": [
+    {"da": "in merita", "a": "in vendita", "fonte": "spike 01, Bernareggio"},
+    {"da": "WMC", "a": "VMC", "fonte": "spike 01, Bernareggio"},
+    {"da": "classe ademo", "a": "classe A, abbiamo", "fonte": "spike 01, Bernareggio"}
+  ]
+}

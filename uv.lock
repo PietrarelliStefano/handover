@@ -111,6 +111,9 @@ name = "handover"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "mlx-whisper", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
+    { name = "numpy" },
+    { name = "onnxruntime" },
     { name = "typer" },
 ]
 
@@ -119,23 +122,20 @@ dev = [
     { name = "pytest" },
 ]
 spike = [
-    { name = "mlx-whisper", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
-    { name = "numpy" },
     { name = "ocrmac", marker = "sys_platform == 'darwin'" },
-    { name = "onnxruntime" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "typer", specifier = ">=0.12" }]
+requires-dist = [
+    { name = "mlx-whisper", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", specifier = ">=0.4" },
+    { name = "numpy", specifier = ">=1.26" },
+    { name = "onnxruntime", specifier = ">=1.18" },
+    { name = "typer", specifier = ">=0.12" },
+]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=8" }]
-spike = [
-    { name = "mlx-whisper", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", specifier = ">=0.4" },
-    { name = "numpy", specifier = ">=1.26" },
-    { name = "ocrmac", marker = "sys_platform == 'darwin'", specifier = ">=1.0" },
-    { name = "onnxruntime", specifier = ">=1.18" },
-]
+spike = [{ name = "ocrmac", marker = "sys_platform == 'darwin'", specifier = ">=1.0" }]
 
 [[package]]
 name = "hf-xet"

@@ -58,3 +58,40 @@ def probe(
 
 if __name__ == "__main__":
     app()
+
+
+@app.command()
+def run(
+    cartella: Path = typer.Argument(..., exists=True, file_okay=False, readable=True,
+                                    help="Cartella dello shooting (con CLIP/ o CLIPS/). Solo lettura."),
+    agente: str = typer.Option("venezia", help="Agente: glossario e template."),
+    da: str | None = typer.Option(None, help="Rifà da questo passo in poi: probe, mezzanine, vad, "
+                                             "trascrizione, take, scelta, piano."),
+    senza_llm: bool = typer.Option(False, "--senza-llm", help="Scelta delle take con la regola locale."),
+    render_: bool = typer.Option(False, "--render", help="Fa anche il render del piano."),
+) -> None:
+    """Shooting → piano di montaggio (M2: parlato e sottotitoli)."""
+    from handover.pipeline import STEPS, run_video
+
+    if da and da not in STEPS:
+        raise typer.BadParameter(f"passo sconosciuto: {da} (validi: {', '.join(STEPS)})")
+    plan = run_video(cartella, agent=agente, redo_from=da, llm=None if senza_llm else _default_llm(),
+                     log=typer.echo)
+    typer.echo(f"\nPiano: {plan}")
+    if render_:
+        render(plan)
+
+
+def _default_llm():
+    from handover.video.selection import run_claude
+    return run_claude
+
+
+@app.command()
+def render(piano: Path = typer.Argument(..., exists=True, dir_okay=False, help="Piano di montaggio JSON (§7)."),
+           out: Path | None = typer.Option(None, help="File di uscita (default: render/v<N>.mp4 nella cartella di lavoro).")) -> None:
+    """Render del piano con Remotion (render/)."""
+    from handover.render import render_plan
+
+    path = render_plan(piano, out, log=typer.echo)
+    typer.echo(f"Render: {path}")
