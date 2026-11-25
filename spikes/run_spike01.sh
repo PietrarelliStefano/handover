@@ -17,7 +17,8 @@ uv sync --group spike
 uv run handover probe "$CLIP_DIR"
 uv run python spikes/s01_mezzanine.py "$CLIP_DIR"
 uv run python spikes/s02_transcribe.py "$CLIP_DIR" --reel "$REEL" --models turbo large-v3
-uv run python spikes/s02_transcribe.py "$CLIP_DIR" --reel "$REEL" --models turbo large-v3 --prompt
+# Glossario come prompt: scartato dopo il secondo giro (inventa il testo del prompt). Per rifarlo:
+# uv run python spikes/s02_transcribe.py "$CLIP_DIR" --reel "$REEL" --models turbo large-v3 --prompt
 uv run python spikes/s02b_vad.py "$CLIP_DIR"
 
 if [[ -f "$REEL" ]]; then

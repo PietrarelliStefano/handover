@@ -244,7 +244,8 @@ def main() -> None:
                  "le altre take. \"Euristica\" = ultima take completa, senza LLM; \"reel\" = take usata nel reel "
                  "(dalla mappa audio se c'è, altrimenti stimata dal testo).")
         L.append("")
-        k0 = next((k for k in ("turbo+prompt+vad", "turbo+vad", "turbo") if k in takes), next(iter(takes)))
+        best_cfg = recommend(compare, decide(compare, trans)[0]) if compare and trans else None
+        k0 = best_cfg if best_cfg in takes else next((k for k in ("turbo+vad", "turbo") if k in takes), next(iter(takes)))
         t = takes[k0]
         L.append(f"### Battute con le take candidate ({k0})")
         L.append("")

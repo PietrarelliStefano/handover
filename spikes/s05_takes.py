@@ -19,6 +19,7 @@ Scrive results/takes-<variante>.json.
 from __future__ import annotations
 
 import argparse
+import re
 from datetime import datetime, timedelta
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -144,6 +145,20 @@ def prefix_fit(short: list[str], long: list[str]) -> float | None:
     return al.errors / len(short)
 
 
+def clip_number(name: str) -> int:
+    m = re.search(r"(\d+)$", name)
+    return int(m.group(1)) if m else 10**9
+
+
+def similarity(a: list[str], b: list[str]) -> float:
+    """Similarità §6.2.3: sulle parole; per le frasi brevi anche sui caratteri, perché una lettera
+    ("andiamolo" / "andiamola") vale una parola intera su tre."""
+    r = SequenceMatcher(None, a, b, autojunk=False).ratio()
+    if min(len(a), len(b)) <= 6:
+        r = max(r, SequenceMatcher(None, " ".join(a), " ".join(b), autojunk=False).ratio())
+    return r
+
+
 def same_opening(a: list[str], b: list[str]) -> bool:
     """Take improvvisate della stessa battuta: stesso attacco (prime 8 parole, ≤ 2 errori)."""
     if min(len(a), len(b)) < OPENING:
@@ -183,7 +198,9 @@ def main() -> None:
     for p in phrases:
         t0 = parse_time(probe.get(p["clip"], {}).get("creation_time"))
         p["abs"] = t0 + timedelta(seconds=p["start"]) if t0 else None
-    phrases.sort(key=lambda p: (p["abs"].timestamp() if p["abs"] else float("inf"), p["clip"], p["start"]))
+    # ordine di ripresa: numero progressivo del file (Z50_6405 prima di Z50_6406). Il creation_time
+    # dei MOV non segue l'ordine di ripresa (primo giro dello spike); serve solo per la finestra temporale.
+    phrases.sort(key=lambda p: (clip_number(p["clip"]), p["clip"], p["start"]))
     for i, p in enumerate(phrases):
         p["id"] = i
 
@@ -207,7 +224,7 @@ def main() -> None:
         for b in eligible[i + 1:]:
             if not close(a, b):
                 continue
-            r = SequenceMatcher(None, a["toks"], b["toks"], autojunk=False).ratio()
+            r = similarity(a["toks"], b["toks"])
             ratios[(a["id"], b["id"])] = r
             rule = "spec" if r >= SIM else "stesso attacco" if same_opening(a["toks"], b["toks"]) else None
             if rule:

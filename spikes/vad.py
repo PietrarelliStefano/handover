@@ -117,8 +117,14 @@ def speech_segments(probs: np.ndarray, p: VadParams = VadParams(), duration_s: f
     return [(round(a, 3), round(b, 3)) for a, b in out]
 
 
-def in_speech(t0: float, t1: float, segs: list[tuple[float, float]], min_overlap: float = 0.5) -> bool:
-    """La parola [t0, t1] cade nel parlato se almeno metà della sua durata è dentro un segmento."""
-    dur = max(t1 - t0, 1e-3)
-    ov = sum(max(0.0, min(t1, b) - max(t0, a)) for a, b in segs)
-    return ov / dur >= min_overlap
+WORD_PAD_S = 0.25
+
+
+def in_speech(t0: float, t1: float, segs: list[tuple[float, float]], pad_s: float = WORD_PAD_S) -> bool:
+    """La parola [t0, t1] è parlato se tocca un segmento allargato di pad_s.
+
+    Whisper anticipa spesso l'inizio della prima parola di una take (a volte fino a 0 s): con il criterio
+    "metà della parola dentro il parlato" il primo giro dello spike tagliava "L'", "Il", "Ehi", "Vai".
+    Basta che la parola tocchi il parlato; le allucinazioni lontane dalla voce restano fuori.
+    """
+    return any(t1 > a - pad_s and t0 < b + pad_s for a, b in segs)
