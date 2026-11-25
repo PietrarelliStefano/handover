@@ -1,6 +1,6 @@
 # Handover — Specifica v1
 
-Stato: proposta · 24 novembre 2026 (rev. 6: aggiunte le clip generate con Artlist)
+Stato: proposta · 25 novembre 2026 (rev. 7: esiti dello spike video, `docs/spike-01.md`: turbo senza prompt, glossario solo in correzione, VAD, regole delle take)
 
 > **Handover**: la consegna delle chiavi, qui la consegna del lavoro. Repo: `handover`.
 
@@ -37,7 +37,7 @@ L'unico intervento umano è una **review** di pochi minuti: approva oppure rigen
 | --- | --- | --- | --- |
 | Dove gira | Locale sul Mac | Cloud | 20–50 GB per shooting; interni di case abitate restano in locale |
 | Fusione HDR | Exposure fusion (Mertens) + recupero finestre dallo scatto più scuro | Radianza HDR + tone mapping | Resa naturale, pochi parametri; il tone mapping tende al look "HDR finto" |
-| Trascrizione | Whisper large-v3-turbo locale (MLX), timestamp per parola | API di trascrizione cloud | Gratis, privata, qualità buona sull'italiano |
+| Trascrizione | Whisper large-v3-turbo locale (MLX), timestamp per parola, senza prompt | API di trascrizione cloud; large-v3 | Gratis, privata, qualità buona sull'italiano. Nello spike large-v3 è pari in qualità ma usa 4,0 GB contro 2,5 GB |
 | Regia | Template fisso + LLM per classificare e scegliere | LLM che decide tutta la regia | Risultato prevedibile e ripetibile |
 | Contratto centrale | Piano di montaggio in JSON (§6) | Render diretto | Testabile, rigenerabile, ispezionabile in review |
 | Render | Remotion (React) | ffmpeg/MoviePy | Sottotitoli animati e brand per template senza dolore |
@@ -102,16 +102,20 @@ Gli scatti singoli fuori da un gruppo vengono sviluppati con lo stesso look, sen
 - **Rotazione**: le clip della Z50II hanno il tag di rotazione (display matrix 90°, cioè 90° in senso antiorario) e la rotazione automatica di ffmpeg le rende già verticali: verificato sulle reference. Regola: si applica il tag. Solo se il tag manca e il file è orizzontale si usa `rotazione_ingresso: -90` del profilo camera (`transpose=2`). Attenzione: alcuni strumenti ignorano il tag, per questo nel tuo editor le clip arrivano orizzontali. Gli originali non vengono mai modificati.
 - **Mezzanine**: per ogni clip, un file di lavoro già ruotato a 1440×2560 (dal 2160×3840 di origine), H.264 8 bit ad alto bitrate, codificato con VideoToolbox (hardware dell'M1). Remotion, l'analisi e i keyframe lavorano solo sui mezzanine, così decodifica HEVC e rotazione si fanno una volta sola. Se arriva una clip in N-Log o HLG (non prevista), viene segnalata e non usata. I mezzanine si cancellano alla consegna.
 - **Verifica della rotazione**: rilevamento volti su 3 keyframe delle clip con parlato. Se i volti risultano dritti solo con un'altra rotazione, flag `rotazione_sospetta` e uso della rotazione rilevata.
-- **Classificazione A/B**: voice activity detection su ogni clip. Con parlato significativo è **A-roll**; senza è **b-roll**. Nelle reference l'A-roll è un *walk-and-talk*: l'agente cammina nell'immobile e parla, quindi l'ambiente si vede già nell'A-roll. Per questo l'etichetta ambiente si calcola anche sulle clip A-roll.
+- **Classificazione A/B**: voice activity detection su ogni clip (Silero VAD). Con almeno 1,5 s di parlato è **A-roll**; altrimenti è **b-roll** e Whisper non la trascrive. Nelle A-roll le parole di Whisper che non toccano il parlato rilevato (margine 0,25 s) vengono scartate: sul silenzio Whisper inventa testo ("Grazie.", "Grazie a tutti.": verificato nello spike). Nelle reference l'A-roll è un *walk-and-talk*: l'agente cammina nell'immobile e parla, quindi l'ambiente si vede già nell'A-roll. Per questo l'etichetta ambiente si calcola anche sulle clip A-roll.
 - **Take**: nelle reference ogni clip è breve (4–30 s) e contiene di solito una battuta. Le take ripetute sono quindi spesso **file diversi**: il rilevamento delle ripetizioni (§6.2) lavora sull'insieme delle clip, non dentro una sola.
 - **Etichetta ambiente** (3 keyframe all'LLM): `esterno | ingresso | soggiorno | cucina | camera | bagno | balcone | dettaglio | altro`, più punteggio di qualità (mosso, esposizione) e l'intervallo utile.
 
 ### 6.2 Trascrizione e selezione delle take
 
-1. Whisper sull'audio di tutte le clip A-roll, con timestamp per parola. Modello `large-v3-turbo` su MLX come default. Con 16 GB anche `large-v3` pieno è praticabile: lo spike confronta i due su audio reale e sceglie in base a errori sui token critici e tempi.
+1. Whisper sull'audio di tutte le clip A-roll, con timestamp per parola. Modello `large-v3-turbo` su MLX (scelto nello spike: stessa qualità di `large-v3` sull'audio reale, meno memoria). **Nessun `initial_prompt`**: nello spike il glossario come prompt faceva scrivere a Whisper il testo del prompt al posto del parlato vero, e raddoppiava gli errori sulle clip.
 2. Segmentazione in frasi.
-3. **Rilevamento delle ripetizioni**: frasi con testo normalizzato simile (similarità ≥ 0,7) entro una finestra temporale sono take della stessa battuta.
-4. **Scelta della take** (LLM, con trascrizione e metadati): preferenza per l'ultima take completa, senza esitazioni né frasi interrotte. Uscita con confidenza; sotto 0,7 → flag in review.
+3. **Rilevamento delle ripetizioni**: frasi con testo normalizzato simile (similarità ≥ 0,7; per le frasi fino a 6 parole anche sui caratteri) entro una finestra temporale sono take della stessa battuta. In più, dallo spike:
+   - le frasi lunghe dette d'un fiato, spesso senza punteggiatura, si spezzano dove ci si allineano le frasi delle altre take (almeno due frasi, oppure una pausa ≥ 0,3 s);
+   - take improvvisate con lo stesso attacco (prime 8 parole, ≤ 2 errori) sono la stessa battuta;
+   - una take interrotta si aggancia alla battuta con cui condivide l'inizio, ma senza fare da ponte tra due battute diverse;
+   - l'ordine delle take è il numero progressivo del file: il `creation_time` dei MOV non segue l'ordine di ripresa.
+4. **Scelta della take** (LLM, con trascrizione e metadati): preferenza per una **take continua che copre più battute di fila** (meno tagli), poi per la take completa, senza esitazioni né frasi interrotte; a parità, l'ultima. È il criterio osservato nei montaggi di Stefano: a Bernareggio l'apertura viene tutta da una sola take, che non è l'ultima, e cantina, prezzo e chiusura da un'altra unica take. La regola "ultima take completa" da sola indovina 6 casi su 9. Uscita con confidenza; sotto 0,7 → flag in review. Verifica: la mappa audio reel → clip sui reel dell'archivio dice quali take sono state scelte davvero.
 5. **Pulizia**: rimozione di filler ("ehm", "allora" a inizio frase se isolato), silenzi > 300 ms accorciati a 150 ms.
 6. **Normalizzazione dei numeri**: "centoventi metri quadri" → "120 m²", "duecentocinquantamila euro" → "250.000 €".
 
@@ -147,7 +151,7 @@ Durata obiettivo 45–80 s (reference: 53 s e 76 s); oltre 90 s di parlato selez
   - Parole chiave a volte in una card a parte tra virgolette ("VILLA").
 - Numeri come cifre: "€188.000", "3 LOCALI", "30M".
 - Safe zone 1440×2560: baseline tra il 70% e l'80% dell'altezza, margine destro ≥ 210 px (pulsanti di Instagram e TikTok), mai sotto i 2050 px. Va verificato che la posizione attuale (~75%) non finisca sotto la didascalia di TikTok.
-- **Glossario per agente**: nome dell'agente, agenzia, comuni ricorrenti e vie corrette. Cresce con le correzioni fatte in review e si usa come prompt di Whisper e nella passata di correzione.
+- **Glossario per agente**: nome dell'agente, agenzia, comuni ricorrenti e vie corrette. Cresce con le correzioni fatte in review e si usa **solo nella passata di correzione dopo la trascrizione** (sostituzioni da glossario, per esempio "in merita" → "in vendita" o "WMC" → "VMC"), mai come prompt di Whisper (§6.2.1). Le parole corrette vengono marcate e passano dalla conferma in review come i token critici.
 - **Token critici**: numeri, prezzi, metrature, indirizzi e nomi propri vengono marcati e richiedono conferma in review (§8).
 
 ### 6.6 Render
