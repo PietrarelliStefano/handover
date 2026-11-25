@@ -1,6 +1,6 @@
-// node --experimental-strip-types src/subtitles.test.ts
+// node --experimental-strip-types src/captionGroups.test.ts
 import assert from "node:assert/strict";
-import { activeWordIndex, displayText, groupWords } from "./subtitles.ts";
+import { activeWordIndex, displayText, groupWords } from "./captionGroups.ts";
 
 const W = (text: string, t0 = 0, step = 300) =>
   text.split(" ").map((t, i) => ({ t, start_ms: t0 + i * step, end_ms: t0 + i * step + 250, critical: false }));
@@ -22,4 +22,4 @@ assert.equal(g3[0].showTo, 850 + 300);                               // pausa lu
 const g4 = groupWords(W("Il prezzo €188.000. Contattami, io sono Simone Venezia."));
 assert.deepEqual(g4.map((g) => g.words.map((w) => displayText(w.t)).join(" ")),
                  ["Il prezzo €188.000", "Contattami io sono", "Simone Venezia"]);  // oltre ~2 righe si va a capo
-console.log("subtitles.test.ts: ok");
+console.log("captionGroups.test.ts: ok");

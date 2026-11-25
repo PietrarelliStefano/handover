@@ -1,7 +1,7 @@
 import React from "react";
 import { AbsoluteFill, useCurrentFrame, useVideoConfig } from "remotion";
 import type { Word } from "./plan";
-import { activeWordIndex, displayText, groupWords } from "./subtitles";
+import { activeWordIndex, displayText, groupWords } from "./captionGroups";
 
 // Stile misurato sul reel 11.14 (§6.5): Montserrat Black maiuscolo bianco, contorno nero ~5 px,
 // parola pronunciata in un riquadro #003864 con angoli arrotondati; testo tra y 1838 e 2097,

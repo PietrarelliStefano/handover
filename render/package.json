@@ -5,7 +5,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "studio": "remotion studio src/index.ts",
-    "test": "node --experimental-strip-types src/subtitles.test.ts && node --experimental-strip-types src/timeline.test.ts"
+    "test": "node --experimental-strip-types src/captionGroups.test.ts && node --experimental-strip-types src/timeline.test.ts"
   },
   "dependencies": {
     "@fontsource/montserrat": "5.3.0",
