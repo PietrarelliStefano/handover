@@ -8,10 +8,12 @@ locale con confidenza bassa: tutto finisce in review.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
 from collections import defaultdict
+from pathlib import Path
 from typing import Callable
 
 from handover.video.text import align, normalize_tokens
@@ -107,10 +109,30 @@ def validate(sel: dict, battute: list[dict]) -> list[str]:
     return errs
 
 
-def run_claude(prompt: str, model: str | None = None, timeout: int = 300) -> str:
+CLAUDE_CANDIDATES = ("~/.claude/local/claude", "~/.local/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude")
+
+
+def find_claude() -> str | None:
+    """Claude Code: $HANDOVER_CLAUDE, poi il PATH, poi i percorsi degli installer. Gli alias della shell
+    (per esempio `alias claude=~/.claude/local/claude`) non sono visibili da Python."""
+    env = os.environ.get("HANDOVER_CLAUDE")
+    if env:
+        return env if Path(env).expanduser().is_file() else None
     exe = shutil.which("claude")
+    if exe:
+        return exe
+    for c in CLAUDE_CANDIDATES:
+        p = Path(c).expanduser()
+        if p.is_file() and os.access(p, os.X_OK):
+            return str(p)
+    return None
+
+
+def run_claude(prompt: str, model: str | None = None, timeout: int = 300) -> str:
+    exe = find_claude()
     if not exe:
-        raise FileNotFoundError("Claude Code (`claude`) non trovato nel PATH")
+        raise FileNotFoundError("Claude Code (`claude`) non trovato: né nel PATH né in "
+                                + ", ".join(CLAUDE_CANDIDATES) + ". Indica il percorso con HANDOVER_CLAUDE.")
     cmd = [exe, "-p", prompt, "--output-format", "json"]
     if model:
         cmd += ["--model", model]

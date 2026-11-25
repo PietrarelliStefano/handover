@@ -100,3 +100,17 @@ def test_validate_rejects_repeated_content_with_different_words():
           {"id": "b2", "takes": [_t("t2", "Z50_2", "188 mila euro per vivere in questi tre locali.")]}]
     sel = {"order": [{"battuta": "b1", "take": "t1", "role": "corpo"}, {"battuta": "b2", "take": "t2", "role": "corpo"}]}
     assert any("frase ripetuta" in e for e in validate(sel, bs))
+
+
+def test_find_claude_outside_path(tmp_path, monkeypatch):
+    from handover.video import selection
+    exe = tmp_path / ".claude" / "local" / "claude"
+    exe.parent.mkdir(parents=True)
+    exe.write_text("#!/bin/sh\n")
+    exe.chmod(0o755)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("PATH", "/nonexistent")
+    monkeypatch.delenv("HANDOVER_CLAUDE", raising=False)
+    assert selection.find_claude() == str(exe)
+    monkeypatch.setenv("HANDOVER_CLAUDE", str(tmp_path / "manca"))
+    assert selection.find_claude() is None

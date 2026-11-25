@@ -141,6 +141,11 @@ def run_video(shooting: Path, *, agent: str = "venezia", encoder: str = "h264_vi
         log("Scelta delle take…")
         sel = select(battute, llm=llm)
         write_json(ws.path("selection.json"), sel)
+        if sel["source"] != "llm" and llm is not None:
+            log("ATTENZIONE: scelta fatta con la regola locale, non con Claude:")
+            for e in sel.get("llm_errors", []):
+                log(f"  {e}")
+            log("  Corretto il problema, rifai la scelta con: handover run <cartella> --da scelta")
         log(f"Scelta: {len(sel['order'])} battute ({sel['source']}), {len(sel['flags'])} da confermare")
     selection = read_json(sel_path)
 
