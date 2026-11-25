@@ -47,3 +47,9 @@ def test_sei_is_not_a_number_and_names_are_critical():
     assert texts(ws)[0] == "Sei" and not ws[0]["critical"]
     assert texts([w for w in ws if w["critical"]]) == ["Simone", "Venezia"]
     assert ws[-1]["t"] == "Venezia."   # la punteggiatura resta nel piano: serve al render per i gruppi
+
+
+def test_euro_sign_attached():
+    for src in ("costa €188.000.", "costa 188.000€", "costa 188.000 €"):
+        ws = subtitle_words(W(src), G)
+        assert texts(ws)[-1] == "€188.000" and ws[-1]["critical"], src

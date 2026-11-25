@@ -96,3 +96,45 @@ def render(piano: Path = typer.Argument(..., exists=True, dir_okay=False, help="
 
     path = render_plan(piano, out, log=typer.echo)
     typer.echo(f"Render: {path}")
+
+
+lib_app = typer.Typer(help="Libreria di musica e SFX con prova della licenza (§6.4).", no_args_is_help=True)
+app.add_typer(lib_app, name="lib")
+
+
+@lib_app.command("add")
+def lib_add(
+    file: Path = typer.Argument(..., exists=True, dir_okay=False, help="File audio (mp3, wav…)."),
+    tipo: str = typer.Option(..., help="musica | sfx"),
+    licenza: Path | None = typer.Option(None, exists=True, dir_okay=False,
+                                        help="Copia dei termini di licenza in vigore oggi (obbligatoria)."),
+    fonte: str = typer.Option("pixabay", help="Da dove viene il file."),
+    url: str | None = typer.Option(None, help="Pagina del file sul sito della fonte."),
+    autore: str | None = typer.Option(None),
+    mood: str | None = typer.Option(None, help="Solo musica: elegante | moderno | caldo …"),
+    categoria: str | None = typer.Option(None, help="Solo SFX: whoosh | prezzo | card"),
+    piattaforme: str = typer.Option("instagram,facebook,tiktok", help="Piattaforme coperte dalla licenza."),
+) -> None:
+    """Aggiunge una traccia con la prova della licenza."""
+    from handover.library import Library
+
+    t = Library().add(file, tipo=tipo, fonte=fonte, licenza_file=licenza, url=url, autore=autore, mood=mood,
+                      categoria=categoria, piattaforme=[p.strip() for p in piattaforme.split(",") if p.strip()])
+    typer.echo(f"Aggiunta {t.id}: {t.file} ({t.durata_ms / 1000:.1f} s)")
+
+
+@lib_app.command("list")
+def lib_list() -> None:
+    """Elenca la libreria."""
+    from handover.library import Library
+
+    lib = Library()
+    tracks = lib.tracks()
+    if not tracks:
+        typer.echo(f"Libreria vuota ({lib.root}).")
+        return
+    for t in tracks:
+        what = t.mood if t.tipo == "musica" else t.categoria
+        flag = " BLOCCATA" if t.bloccata else ""
+        typer.echo(f"{t.id}  {t.tipo:<6} {what or '-':<9} {t.durata_ms / 1000:6.1f} s  {t.fonte:<9} "
+                   f"{','.join(t.piattaforme_consentite)}{flag}")

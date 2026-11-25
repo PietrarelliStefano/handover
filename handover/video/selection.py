@@ -39,6 +39,10 @@ Compito:
    a. preferisci una take continua che copre più battute di fila nella stessa clip (meno tagli nel montaggio);
    b. take completa, senza esitazioni, ripetizioni o frasi interrotte;
    c. a parità, l'ultima girata (numero di clip più alto).
+   d. continuità: molte clip iniziano e/o finiscono con un movimento di camera girato apposta per fare da
+      transizione (indicato sotto per ogni clip). Quando puoi, accosta movimenti compatibili: una clip che
+      esce con una panoramica a destra seguita da una che entra con una panoramica a destra, avvicinamento
+      con avvicinamento.
 3. Nessuna frase deve comparire due volte nel reel.
 4. Dai una confidenza da 0 a 1 per ogni scelta: sotto 0,7 la scelta verrà controllata a mano.
 
@@ -54,7 +58,15 @@ Battute:
 """
 
 
-def _fmt(battute: list[dict]) -> tuple[str, str]:
+MOVE_NAMES = {"pan_left": "panoramica a sinistra", "pan_right": "panoramica a destra", "tilt_up": "tilt in alto",
+              "tilt_down": "tilt in basso", "push_in": "avvicinamento", "pull_out": "allontanamento"}
+
+
+def _move(m: dict | None) -> str:
+    return f"{MOVE_NAMES.get(m['kind'], m['kind'])} {(m['end_ms'] - m['start_ms']) / 1000:.1f} s" if m else "nessuno"
+
+
+def _fmt(battute: list[dict], motion: dict | None = None) -> tuple[str, str]:
     by_clip: dict[str, list[str]] = defaultdict(list)
     lines = []
     for b in battute:
@@ -64,12 +76,20 @@ def _fmt(battute: list[dict]) -> tuple[str, str]:
             flag = "" if t["complete"] else " (incompleta)"
             lines.append(f"  {t['take']} · {t['clip']} {t['start']:.1f}–{t['end']:.1f} s"
                          f" ({t['end'] - t['start']:.1f} s){flag}: «{t['text']}»")
-    clips = "\n".join(f"  {c}: {' '.join(dict.fromkeys(ids))}" for c, ids in sorted(by_clip.items(), key=lambda x: clip_number(x[0])))
+    motion = motion or {}
+
+    def moves(c: str) -> str:
+        if c not in motion:
+            return ""
+        return f" · movimento d'ingresso: {_move(motion[c].get('entry'))}; d'uscita: {_move(motion[c].get('exit'))}"
+
+    clips = "\n".join(f"  {c}: {' '.join(dict.fromkeys(ids))}{moves(c)}"
+                      for c, ids in sorted(by_clip.items(), key=lambda x: clip_number(x[0])))
     return clips, "\n".join(lines)
 
 
-def build_prompt(battute: list[dict]) -> str:
-    clips, text = _fmt(battute)
+def build_prompt(battute: list[dict], motion: dict | None = None) -> str:
+    clips, text = _fmt(battute, motion)
     return PROMPT.format(clips=clips, battute=text)
 
 
@@ -212,10 +232,10 @@ def heuristic_selection(battute: list[dict]) -> dict:
     return {"order": items, "excluded": excluded}
 
 
-def select(battute: list[dict], llm: Callable[[str], str] | None = run_claude) -> dict:
+def select(battute: list[dict], llm: Callable[[str], str] | None = run_claude, motion: dict | None = None) -> dict:
     """Scelta con LLM e validazione; in caso di problemi, regola locale. Il risultato è l'artefatto
     selection.json: contiene anche prompt, risposta grezza ed eventuali errori, per la review."""
-    prompt = build_prompt(battute)
+    prompt = build_prompt(battute, motion)
     info: dict = {"source": "euristica", "prompt": prompt}
     if llm is not None:
         try:

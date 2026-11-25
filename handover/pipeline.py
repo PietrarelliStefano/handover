@@ -15,16 +15,18 @@ from pathlib import Path
 from typing import Callable
 
 from handover.ingest.probe import probe_folder
-from handover.video import media, plan as planmod, takes as takesmod, vad as vadmod
+from handover.library import CATEGORIE_SFX, Library, make_placeholders
+from handover.video import media, motion as motionmod, plan as planmod, takes as takesmod, vad as vadmod
 from handover.video.selection import run_claude, select
 from handover.video.subtitles import Glossary
 from handover.video.transcribe import MlxWhisper
 from handover.workdir import Workspace, read_json, shooting_id, work_root, write_json
 
-STEPS = ("probe", "mezzanine", "vad", "trascrizione", "take", "scelta", "piano")
+STEPS = ("probe", "mezzanine", "movimento", "vad", "trascrizione", "take", "scelta", "piano")
 ARTIFACTS = {
     "probe": ["probe.json"],
-    "mezzanine": ["mezzanine"],
+    "mezzanine": ["mezzanine", "mezzanine_raw"],
+    "movimento": ["motion.json"],  # i mezzanine stabilizzati tornano originali (vedi clear_from)
     "vad": ["audio", "vad.json"],
     "trascrizione": ["transcripts"],
     "take": ["takes.json"],
@@ -55,7 +57,19 @@ def open_workspace(shooting: Path) -> tuple[Workspace, list]:
     return ws, infos
 
 
+def _stage(ws: Workspace, lib: Library, t) -> dict:
+    """Copia un file della libreria nella cartella di lavoro (lib/…): il piano resta autosufficiente."""
+    dst = ws.path("lib", t.file)
+    if not dst.exists():
+        shutil.copy2(lib.path(t), dst)
+    return {"file": f"lib/{t.file}", "license_id": t.licenza_id, "fonte": t.fonte}
+
+
 def clear_from(ws: Workspace, step: str) -> None:
+    raw = ws.root / "mezzanine_raw"
+    if step == "movimento" and raw.is_dir():  # si rifà la stabilizzazione partendo dai mezzanine originali
+        for f in raw.glob("*.mov"):
+            f.replace(ws.root / "mezzanine" / f.name)
     for s in STEPS[STEPS.index(step):]:
         for name in ARTIFACTS[s]:
             p = ws.root / name
@@ -89,6 +103,33 @@ def run_video(shooting: Path, *, agent: str = "venezia", encoder: str = "h264_vi
         log(f"Mezzanine {n}/{len(todo)}: {k}")
         media.make_mezzanine(Path(usable[k]["file"]), ws.path("mezzanine", f"{k}.mov"),
                              encoder=encoder, hw_decode=hw_decode)
+
+    # movimento di camera e stabilizzazione dove serve (§6.1, rev. 8)
+    motion_path = ws.root / "motion.json"
+    if not motion_path.exists():
+        motion = {}
+        can_stab = media.has_filter("vidstabtransform")
+        for n, k in enumerate(sorted(usable, key=takesmod.clip_number), 1):
+            log(f"Movimento {n}/{len(usable)}: {k}")
+            mez = ws.root / "mezzanine" / f"{k}.mov"
+            m = motionmod.analyze(mez)
+            m["stabilized"] = False
+            if m["needs_stabilization"]:
+                if can_stab:
+                    raw = ws.path("mezzanine_raw", f"{k}.mov")
+                    mez.replace(raw)
+                    media.stabilize(raw, mez, encoder=encoder)
+                    m["stabilized"] = True
+                else:
+                    m["flag"] = "stabilizzazione_non_disponibile"
+            motion[k] = m
+        write_json(ws.path("motion.json"), motion)
+        stab = [k for k, m in motion.items() if m["stabilized"]]
+        log(f"Movimento: {sum(1 for m in motion.values() if m['entry'] or m['exit'])} clip con movimenti "
+            f"d'ingresso/uscita, {len(stab)} stabilizzate" + (f" ({' '.join(stab)})" if stab else ""))
+        if not can_stab and any(m["needs_stabilization"] for m in motion.values()):
+            log("  ATTENZIONE: ffmpeg senza vidstab, nessuna stabilizzazione")
+    motion = read_json(motion_path)
 
     # audio + vad
     vad_path = ws.root / "vad.json"
@@ -139,7 +180,7 @@ def run_video(shooting: Path, *, agent: str = "venezia", encoder: str = "h264_vi
     sel_path = ws.root / "selection.json"
     if not sel_path.exists():
         log("Scelta delle take…")
-        sel = select(battute, llm=llm)
+        sel = select(battute, llm=llm, motion=motion)
         write_json(ws.path("selection.json"), sel)
         if sel["source"] != "llm" and llm is not None:
             log("ATTENZIONE: scelta fatta con la regola locale, non con Claude:")
@@ -149,16 +190,26 @@ def run_video(shooting: Path, *, agent: str = "venezia", encoder: str = "h264_vi
         log(f"Scelta: {len(sel['order'])} battute ({sel['source']}), {len(sel['flags'])} da confermare")
     selection = read_json(sel_path)
 
+    # libreria: SFX segnaposto se mancano, musica scelta sulla durata del reel (§6.4)
+    lib = Library()
+    for t in make_placeholders(lib):
+        log(f"Libreria: aggiunto SFX segnaposto {t.id} ({t.categoria}), generato localmente")
+    draft, _ = planmod.build_plan(ws.root.name, battute, selection, probe, glossary, motion=motion)
+    duration_s = sum(planmod.frames_of(s) for s in draft["segments"]) / planmod.FPS
+    music, music_flags = lib.choose_music(duration_s)
+    assets = {"music": _stage(ws, lib, music) if music else None, "flags": music_flags,
+              "sfx": {c: _stage(ws, lib, t) for c in CATEGORIE_SFX if (t := lib.choose_sfx(c))}}
+
     # piano (versionato): nuovo solo se cambiano gli ingressi
-    digest = hashlib.sha256(json.dumps([battute, selection["order"], glossary.__dict__, planmod.PLAN_VERSION],
-                                       sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:16]
+    digest = hashlib.sha256(json.dumps([battute, selection["order"], glossary.__dict__, planmod.PLAN_VERSION,
+                                        motion, assets], sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:16]
     versions = ws.plan_versions()
     if versions and not redo_from:  # con --da si crea sempre una versione nuova
         meta = versions[-1].with_suffix(".meta.json")
         if meta.exists() and read_json(meta).get("inputs") == digest:
             log(f"Piano invariato: {versions[-1]}")
             return versions[-1]
-    plan, review = planmod.build_plan(ws.root.name, battute, selection, probe, glossary)
+    plan, review = planmod.build_plan(ws.root.name, battute, selection, probe, glossary, motion=motion, assets=assets)
     path = ws.next_plan_path()
     write_json(path, plan)
     write_json(path.with_suffix(".meta.json"), {"inputs": digest, "created_at": datetime.now().isoformat()})

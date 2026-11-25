@@ -114,7 +114,9 @@ def format_numbers(words: list[dict]) -> list[dict]:
     i = 0
     while i < len(words):
         w = words[i]
-        n = _num(w["w"])
+        core = w["w"].strip()
+        euro_attached = core.startswith("€") or core.rstrip(TRAIL_PUNCT).endswith("€")
+        n = _num(core.replace("€", "")) if euro_attached else _num(core)
         if n is None:
             out.append(w)
             i += 1
@@ -124,7 +126,9 @@ def format_numbers(words: list[dict]) -> list[dict]:
         if j < len(words) and keys[j] == "mila":
             n, j = n * 1000, j + 1
         text = _fmt_int(n)
-        if j < len(words) and keys[j] in EURO:
+        if euro_attached:
+            text = f"€{text}"
+        elif j < len(words) and keys[j] in EURO:
             text, j = f"€{text}", j + 1
         elif j + 1 < len(words) and keys[j] in ("metri", "metro") and keys[j + 1] in ("quadri", "quadrati"):
             text, j = f"{text} m²", j + 2
