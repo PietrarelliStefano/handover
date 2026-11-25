@@ -79,7 +79,8 @@ def run(
                      log=typer.echo)
     typer.echo(f"\nPiano: {plan}")
     if render_:
-        render(plan)
+        from handover.render import render_plan
+        typer.echo(f"Render: {render_plan(plan, None, log=typer.echo)}")
 
 
 def _default_llm():
