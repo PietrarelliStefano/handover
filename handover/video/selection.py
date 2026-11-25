@@ -14,10 +14,11 @@ import subprocess
 from collections import defaultdict
 from typing import Callable
 
-from handover.video.text import normalize_tokens
+from handover.video.text import align, normalize_tokens
 from handover.video.takes import clip_number, similarity
 
 CONFIDENCE_REVIEW = 0.7
+REPEAT_COVER = 0.6  # oltre il 60% delle parole già detto altrove = contenuto ripetuto
 ROLES = ("aggancio", "corpo", "chiusura")
 CTA_RE = re.compile(r"\b(contattami|chiamami|scrivimi|io sono|ci penso io)\b", re.I)
 
@@ -97,7 +98,8 @@ def validate(sel: dict, battute: list[dict]) -> list[str]:
             errs.append(f"ruolo non valido per {b}: {item.get('role')}")
         toks = normalize_tokens(takes[b][t]["text"])
         for other, otoks in chosen_toks:
-            if len(toks) >= 3 and similarity(toks, otoks) >= 0.7:
+            if len(toks) >= 3 and (similarity(toks, otoks) >= 0.7 or _covered(toks, [otoks]) >= REPEAT_COVER
+                                   or _covered(otoks, [toks]) >= REPEAT_COVER):
                 errs.append(f"frase ripetuta: {b} e {other}")
         chosen_toks.append((b, toks))
     if not sel.get("order"):
@@ -119,37 +121,72 @@ def run_claude(prompt: str, model: str | None = None, timeout: int = 300) -> str
     return out.get("result", "") if isinstance(out, dict) else str(out)
 
 
+CUE_RE = re.compile(r"\b(basta|stop|rifacciamo|rifaccio|taglia|ok|okay|vai|azione)\b[.!?,]*\s*$", re.I)
+
+
+def _good(t: dict) -> bool:
+    """Take utilizzabile: almeno 4 parole, completa oppure abbastanza lunga (Whisper a volte non mette
+    il punto finale nelle take dette d'un fiato), e senza indicazione di regia in coda ("…, basta.")."""
+    return t["n_words"] >= 4 and (t["complete"] or t["n_words"] >= 8) and not CUE_RE.search(t["text"])
+
+
+def _covered(toks: list[str], others: list[list[str]]) -> float:
+    """Quota delle parole di `toks` che si ritrovano, in ordine, in una delle altre frasi."""
+    if not toks:
+        return 0.0
+    best = 0
+    for o in others:
+        al = align(toks, o, fit=True)
+        best = max(best, sum(1 for op, *_ in al.ops if op == "ok"))
+    return best / len(toks)
+
+
 def heuristic_selection(battute: list[dict]) -> dict:
-    """Senza LLM: battute con almeno una take completa di ≥ 4 parole, in ordine di ripresa;
-    domande d'apertura prima, call to action alla fine; take scelta con il criterio
-    "take continua" e poi "ultima completa". Confidenza 0,5: tutto in review."""
-    usable = [b for b in battute if any(t["complete"] and t["n_words"] >= 4 for t in b["takes"])]
+    """Senza LLM, confidenza 0,5 (tutto in review):
+    - battute con almeno una take utilizzabile (vedi _good), in ordine di ripresa;
+    - take scelta con il criterio "take continua", poi la più lunga, poi l'ultima;
+    - aggancio: take che contiene una domanda, più le battute che la seguono senza stacco nella stessa clip;
+    - chiusura: call to action; il resto è corpo;
+    - battute il cui contenuto è già quasi tutto in altre battute scelte vengono tolte (niente ripetizioni)."""
+    usable = [b for b in battute if any(_good(t) for t in b["takes"])]
     clip_battute: dict[str, set[str]] = defaultdict(set)
     for b in usable:
         for t in b["takes"]:
-            if t["complete"]:
+            if _good(t):
                 clip_battute[t["clip"]].add(b["id"])
 
-    def pick(b: dict) -> str:
-        cands = [t for t in b["takes"] if t["complete"] and t["n_words"] >= 4] or b["takes"]
+    def pick(b: dict) -> dict:
+        cands = [t for t in b["takes"] if _good(t)]
         longest = max(t["n_words"] for t in cands)
         cands = [t for t in cands if t["n_words"] >= 0.8 * longest]
-        return max(cands, key=lambda t: (len(clip_battute[t["clip"]]), clip_number(t["clip"]), t["start"]))["take"]
+        return max(cands, key=lambda t: (len(clip_battute[t["clip"]]), clip_number(t["clip"]), t["start"]))
 
-    def role(b: dict) -> str:
-        text = " ".join(t["text"] for t in b["takes"])
-        if CTA_RE.search(text):
-            return "chiusura"
-        if "?" in text:
-            return "aggancio"
-        return "corpo"
+    chosen = [(b, pick(b)) for b in usable]
+    excluded = [{"battuta": b["id"], "reason": "nessuna take utilizzabile"} for b in battute if b not in usable]
 
-    items = [{"battuta": b["id"], "take": pick(b), "role": role(b), "confidence": 0.5,
-              "reason": "regola locale (LLM non disponibile)"} for b in usable]
+    # niente contenuti ripetuti: si tolgono, dalla più corta, le battute già coperte dalle altre
+    toks = {b["id"]: normalize_tokens(t["text"]) for b, t in chosen}
+    for b, t in sorted(chosen, key=lambda bt: len(toks[bt[0]["id"]])):
+        others = [toks[o["id"]] for o, _ in chosen if o is not b]
+        if len(toks[b["id"]]) >= 3 and _covered(toks[b["id"]], others) >= REPEAT_COVER:
+            chosen = [(o, ot) for o, ot in chosen if o is not b]
+            excluded.append({"battuta": b["id"], "reason": "contenuto già presente in un'altra battuta"})
+
+    roles: dict[str, str] = {}
+    hook_end: dict[str, float] = {}
+    for b, t in sorted(chosen, key=lambda bt: (clip_number(bt[1]["clip"]), bt[1]["start"])):
+        if CTA_RE.search(t["text"]):
+            roles[b["id"]] = "chiusura"
+        elif "?" in t["text"] or (t["clip"] in hook_end and 0 <= t["start"] - hook_end[t["clip"]] <= 1.5):
+            roles[b["id"]] = "aggancio"
+            hook_end[t["clip"]] = t["end"]
+        else:
+            roles[b["id"]] = "corpo"
+
+    items = [{"battuta": b["id"], "take": t["take"], "role": roles[b["id"]], "confidence": 0.5,
+              "reason": "regola locale (LLM non disponibile)"} for b, t in chosen]
     rank = {"aggancio": 0, "corpo": 1, "chiusura": 2}
     items.sort(key=lambda it: rank[it["role"]])  # sort stabile: dentro il ruolo resta l'ordine di ripresa
-    excluded = [{"battuta": b["id"], "reason": "nessuna take completa di almeno 4 parole"}
-                for b in battute if b not in usable]
     return {"order": items, "excluded": excluded}
 
 
