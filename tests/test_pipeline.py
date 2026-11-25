@@ -77,7 +77,7 @@ def test_run_video_end_to_end(shooting, tmp_path):
     assert vad["Z50_0002"]["kind"] == "broll" and not (work / "transcripts" / "Z50_0002.json").exists()
 
     plan = json.loads(plan_path.read_text())
-    words = [w["t"] for s in plan["segments"] for w in s["words"]]
+    words = [w["t"].rstrip(".,?") for s in plan["segments"] for w in s["words"]]
     text = " ".join(words)
     assert text.count("cantina") == 1 and text.count("€188.000") == 1     # niente frasi ripetute
     assert words[-2:] == ["Simone", "Venezia"]                             # chiusura in fondo

@@ -43,7 +43,7 @@ def test_plan_continuity_zoom_and_review():
     assert plan["version"] == 1 and plan["format"] == {"w": 1440, "h": 2560, "fps": 25}
     # b1 e b2 sono contigue nella stessa clip: un segmento; b3 ha un silenzio lungo → due pezzi, jump cut
     assert [(s["clip"], s["zoom"]) for s in segs] == [("Z50_0010.MOV", 1.0), ("Z50_0011.MOV", 1.0), ("Z50_0011.MOV", 1.1)]
-    assert [w["t"] for w in segs[1]["words"]] == ["Costa", "€188.000"]
+    assert [w["t"] for w in segs[1]["words"]] == ["Costa", "€188.000."]
     assert review["critical"] == [{"segment": "s2", "t": "€188.000", "reason": "numero", "clip": "Z50_0011.MOV",
                                    "start_ms": 800}]
     assert all(set(s) == {"id", "type", "clip", "rotation", "in_ms", "out_ms", "zoom", "words"} for s in segs)

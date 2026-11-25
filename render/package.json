@@ -1,0 +1,22 @@
+{
+  "name": "handover-render",
+  "private": true,
+  "description": "Render dei reel di Handover. Si usa solo tramite `handover render <piano.json>`.",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "studio": "remotion studio src/index.ts",
+    "test": "node --experimental-strip-types src/subtitles.test.ts"
+  },
+  "dependencies": {
+    "@fontsource/montserrat": "5.3.0",
+    "@remotion/cli": "4.0.535",
+    "@remotion/fonts": "4.0.535",
+    "react": "19.2.9",
+    "react-dom": "19.2.9",
+    "remotion": "4.0.535"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.7",
+    "typescript": "5.9.3"
+  }
+}

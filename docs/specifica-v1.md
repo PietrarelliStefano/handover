@@ -117,7 +117,7 @@ Gli scatti singoli fuori da un gruppo vengono sviluppati con lo stesso look, sen
    - l'ordine delle take è il numero progressivo del file: il `creation_time` dei MOV non segue l'ordine di ripresa.
 4. **Scelta della take** (LLM, con trascrizione e metadati): preferenza per una **take continua che copre più battute di fila** (meno tagli), poi per la take completa, senza esitazioni né frasi interrotte; a parità, l'ultima. È il criterio osservato nei montaggi di Stefano: a Bernareggio l'apertura viene tutta da una sola take, che non è l'ultima, e cantina, prezzo e chiusura da un'altra unica take. La regola "ultima take completa" da sola indovina 6 casi su 9. Uscita con confidenza; sotto 0,7 → flag in review. Verifica: la mappa audio reel → clip sui reel dell'archivio dice quali take sono state scelte davvero.
 5. **Pulizia**: rimozione di filler ("ehm", "allora" a inizio frase se isolato), silenzi > 300 ms accorciati a 150 ms.
-6. **Normalizzazione dei numeri**: "centoventi metri quadri" → "120 m²", "duecentocinquantamila euro" → "250.000 €".
+6. **Normalizzazione dei numeri**: "centoventi metri quadri" → "120 m²", "duecentocinquantamila euro" → "€250.000" (stile dei sottotitoli, §6.5).
 
 ### 6.3 Montaggio
 
@@ -232,6 +232,11 @@ Serve a replicare quello che fai già a mano: nel reel di Lissone ci sono transi
 ```
 
 Il piano è versionato: ogni rigenerazione crea una nuova versione e non sovrascrive la precedente.
+
+Note sul formato:
+- `words[].t` conserva la punteggiatura di Whisper ("Venezia.", "utile?"): il render la usa per spezzare i gruppi dei sottotitoli e la toglie a schermo, come il maiuscolo.
+- `audio.music` può essere `null` (M2: niente musica). Con `end_card: true` il render di M2 non mostra ancora la card finale: arriva con il template di brand (M3).
+- Le informazioni per la review (token critici da confermare, take da confermare, flag) non stanno nel piano ma in `review.json`, accanto ai piani.
 
 ## 8. Review
 

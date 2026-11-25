@@ -148,7 +148,7 @@ def run_video(shooting: Path, *, agent: str = "venezia", encoder: str = "h264_vi
     digest = hashlib.sha256(json.dumps([battute, selection["order"], glossary.__dict__, planmod.PLAN_VERSION],
                                        sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:16]
     versions = ws.plan_versions()
-    if versions:
+    if versions and not redo_from:  # con --da si crea sempre una versione nuova
         meta = versions[-1].with_suffix(".meta.json")
         if meta.exists() and read_json(meta).get("inputs") == digest:
             log(f"Piano invariato: {versions[-1]}")

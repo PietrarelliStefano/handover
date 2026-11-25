@@ -96,7 +96,7 @@ def build_plan(shooting_id: str, battute: list[dict], selection: dict, probe: di
                                     "critical": w["critical"]} for w in m["words"]]})
         for w in m["words"]:
             if w["critical"]:
-                review["critical"].append({"segment": sid, "t": w["t"], "reason": w.get("reason"),
+                review["critical"].append({"segment": sid, "t": w["t"].rstrip(".,;:…"), "reason": w.get("reason"),
                                            "clip": m["file"], "start_ms": w["start_ms"]})
 
     total_s = sum(s["out_ms"] - s["in_ms"] for s in segments) / 1000

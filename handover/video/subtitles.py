@@ -1,7 +1,8 @@
 """Parole dei sottotitoli: correzione da glossario, numeri in cifre, filler, token critici (§6.2.5–6, §6.5).
 
 Ingresso: parole di Whisper ({w, start, end} in secondi, relative alla clip).
-Uscita: parole da mostrare ({t, start, end, critical, reason?}); il maiuscolo è compito del render.
+Uscita: parole da mostrare ({t, start_ms, end_ms, critical, reason?}). La punteggiatura resta nel testo:
+il render la usa per spezzare i gruppi e la toglie a schermo, insieme al maiuscolo (presentazione).
 """
 
 from __future__ import annotations
@@ -156,12 +157,12 @@ def mark_critical(words: list[dict], g: Glossary) -> list[dict]:
 
 
 def subtitle_words(words: list[dict], g: Glossary) -> list[dict]:
-    """Pipeline completa; uscita con tempi in ms e testo senza punteggiatura finale (tranne ? e !)."""
+    """Pipeline completa; uscita con tempi in ms."""
     ws = mark_critical(format_numbers(drop_fillers(apply_glossary(join_fragments(words), g))), g)
     out = []
     for w in ws:
-        t = w["w"].rstrip(TRAIL_PUNCT).strip()
-        if not t:
+        t = w["w"].strip()
+        if not t.strip(TRAIL_PUNCT + "?!"):
             continue
         item = {"t": t, "start_ms": round(w["start"] * 1000), "end_ms": round(w["end"] * 1000),
                 "critical": bool(w.get("critical"))}

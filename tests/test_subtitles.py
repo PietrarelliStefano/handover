@@ -10,14 +10,14 @@ G = Glossary.load("venezia")
 
 
 def texts(ws):
-    return [w["t"] for w in ws]
+    return [w["t"].rstrip(".,;:…") for w in ws]
 
 
 def test_price_whisper_variants():
     for src in ("mi chiederai il prezzo, 188 mila euro,", "il prezzo centottantottomila euro.", "il prezzo 188 .000 euro"):
         ws = subtitle_words(W(src), G)
         price = next(w for w in ws if w["t"].startswith("€"))
-        assert price["t"] == "€188.000" and price["critical"] and price["reason"] == "numero"
+        assert price["t"].rstrip(".,") == "€188.000" and price["critical"] and price["reason"] == "numero"
 
 
 def test_sqm_and_counts():
@@ -29,7 +29,7 @@ def test_sqm_and_counts():
 def test_glossary_correction_is_critical():
     ws = subtitle_words(W("un appartamento in merita a Bernareggio con WMC"), G)
     assert texts(ws) == ["un", "appartamento", "in", "vendita", "a", "Bernareggio", "con", "VMC"]
-    assert {w["t"]: w.get("reason") for w in ws if w["critical"]} == {
+    assert {w["t"].rstrip(".,"): w.get("reason") for w in ws if w["critical"]} == {
         "in": "glossario", "vendita": "glossario", "Bernareggio": "nome", "VMC": "glossario"}
 
 
@@ -45,4 +45,5 @@ def test_fragments_fillers_and_punctuation():
 def test_sei_is_not_a_number_and_names_are_critical():
     ws = subtitle_words(W("Sei un agente immobiliare? Io sono Simone Venezia."), G)
     assert texts(ws)[0] == "Sei" and not ws[0]["critical"]
-    assert [w["t"] for w in ws if w["critical"]] == ["Simone", "Venezia"]
+    assert texts([w for w in ws if w["critical"]]) == ["Simone", "Venezia"]
+    assert ws[-1]["t"] == "Venezia."   # la punteggiatura resta nel piano: serve al render per i gruppi

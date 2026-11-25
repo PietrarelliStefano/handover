@@ -54,7 +54,10 @@ Non copiare l'archivio nel repo. I test che lo usano vanno marcati `@pytest.mark
 uv sync                      # dipendenze
 uv run pytest                # test veloci
 uv run pytest -m archive     # test sull'archivio reale (SSD collegato)
-uv run handover run "<cartella shooting>"
+uv run handover run "<cartella shooting>"          # shooting → piano di montaggio (M2)
+uv run handover run "<cartella shooting>" --render # … e render del reel
+uv run handover render "<piano.json>"              # solo render (Remotion in render/)
+(cd render && npm test && npx tsc --noEmit)        # test del render
 ```
 
 ## Stile
