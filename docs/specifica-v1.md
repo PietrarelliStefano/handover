@@ -1,6 +1,6 @@
 # Handover — Specifica v1
 
-Stato: proposta · 25 novembre 2026 (rev. 7: esiti dello spike video, `docs/spike-01.md`: turbo senza prompt, glossario solo in correzione, VAD, regole delle take)
+Stato: proposta · 25 novembre 2026 (rev. 8: movimenti di camera ai tagli, stabilizzazione dove serve, SFX di accento, fade di chiusura, piano versione 2. Rev. 7: esiti dello spike video, `docs/spike-01.md`)
 
 > **Handover**: la consegna delle chiavi, qui la consegna del lavoro. Repo: `handover`.
 
@@ -101,6 +101,11 @@ Gli scatti singoli fuori da un gruppo vengono sviluppati con lo stesso look, sen
 
 - **Rotazione**: le clip della Z50II hanno il tag di rotazione (display matrix 90°, cioè 90° in senso antiorario) e la rotazione automatica di ffmpeg le rende già verticali: verificato sulle reference. Regola: si applica il tag. Solo se il tag manca e il file è orizzontale si usa `rotazione_ingresso: -90` del profilo camera (`transpose=2`). Attenzione: alcuni strumenti ignorano il tag, per questo nel tuo editor le clip arrivano orizzontali. Gli originali non vengono mai modificati.
 - **Mezzanine**: per ogni clip, un file di lavoro già ruotato a 1440×2560 (dal 2160×3840 di origine), H.264 8 bit ad alto bitrate, codificato con VideoToolbox (hardware dell'M1). Remotion, l'analisi e i keyframe lavorano solo sui mezzanine, così decodifica HEVC e rotazione si fanno una volta sola. Se arriva una clip in N-Log o HLG (non prevista), viene segnalata e non usata. I mezzanine si cancellano alla consegna.
+- **Movimento di camera** (sui mezzanine, flusso ottico a bassa risoluzione): per ogni clip si misura il movimento globale fotogramma per fotogramma e se ne ricavano
+  - il **movimento d'ingresso** e il **movimento d'uscita**: tratto iniziale e finale con un movimento netto e continuo (panoramica a destra o a sinistra, tilt in alto o in basso, avvicinamento o allontanamento), con tipo, inizio e fine. Stefano gira spesso le clip con un movimento in entrata e uno in uscita proprio per usarli come transizioni;
+  - il **tremolio**: la parte rapida del movimento, tolta quella lenta (i movimenti voluti).
+  Artefatto: `motion.json`.
+- **Stabilizzazione dove serve**: solo le clip con tremolio sopra soglia vengono stabilizzate (ffmpeg vidstab, due passate, con il leggero ritaglio che comporta). Il mezzanine stabilizzato prende il posto di quello originale, che resta in `mezzanine_raw/`. Le clip ferme o con movimenti puliti non si toccano. Soglia da tarare sull'archivio; i valori misurati finiscono nel report.
 - **Verifica della rotazione**: rilevamento volti su 3 keyframe delle clip con parlato. Se i volti risultano dritti solo con un'altra rotazione, flag `rotazione_sospetta` e uso della rotazione rilevata.
 - **Classificazione A/B**: voice activity detection su ogni clip (Silero VAD). Con almeno 1,5 s di parlato è **A-roll**; altrimenti è **b-roll** e Whisper non la trascrive. Nelle A-roll le parole di Whisper che non toccano il parlato rilevato (margine 0,25 s) vengono scartate: sul silenzio Whisper inventa testo ("Grazie.", "Grazie a tutti.": verificato nello spike). Nelle reference l'A-roll è un *walk-and-talk*: l'agente cammina nell'immobile e parla, quindi l'ambiente si vede già nell'A-roll. Per questo l'etichetta ambiente si calcola anche sulle clip A-roll.
 - **Take**: nelle reference ogni clip è breve (4–30 s) e contiene di solito una battuta. Le take ripetute sono quindi spesso **file diversi**: il rilevamento delle ripetizioni (§6.2) lavora sull'insieme delle clip, non dentro una sola.
@@ -126,7 +131,8 @@ Template fisso, ricavato dalle reference:
 1. **Aggancio** (0–5 s): battuta d'apertura, spesso un mini-dialogo ("Sei un agente immobiliare?" / "Sì, posso esserti utile"). La domanda può essere di una seconda voce fuori campo: la trascrizione deve gestire più parlanti e i sottotitoli li mostrano entrambi.
 2. **Corpo**: parlato selezionato. Quando l'agente nomina un ambiente, il b-roll di quell'ambiente copre la frase (match su parole chiave + LLM). Ogni jump cut interno a una clip A-roll è coperto da un b-roll; se non ce ne sono abbastanza, alternanza di zoom al 100%/110% sull'A-roll.
 3. **Regole**: massimo circa 4 s di agente fisso nel corpo; nessun b-roll ripetuto; b-roll di durata 1,5–3,5 s.
-4. **Chiusura**: call to action dell'agente in camera ("Contattami, io sono Simone Venezia…"), più card finale opzionale (logo `IMMOBILIARE VENEZIA.jpg`, telefono).
+4. **Movimenti di camera ai tagli**: a ogni taglio tra clip diverse si tiene il movimento d'uscita della clip che finisce e il movimento d'ingresso di quella che comincia (fino a 2 s ciascuno), se sono attaccati al parlato scelto (entro 0,6 s). Così il movimento girato apposta fa da transizione invece di essere tagliato. Il taglio cade sul fotogramma più veloce del movimento quando possibile. Nella scelta dell'ordine (§6.2.4) l'LLM riceve anche i movimenti di ogni clip, per accostare direzioni compatibili (uscita verso destra → ingresso da sinistra, avvicinamento → avvicinamento) e dare continuità. Su questi tagli va il whoosh (§6.4).
+5. **Chiusura**: call to action dell'agente in camera ("Contattami, io sono Simone Venezia…"), poi **fade a nero** di 1,2 s su video e audio, usando la coda della clip (o il suo movimento d'uscita) quando c'è. Niente card finale per Immobiliare Venezia (scelta di Stefano); la card resta possibile per altri template.
 
 Durata obiettivo 45–80 s (reference: 53 s e 76 s); oltre 90 s di parlato selezionato → flag. B-roll: pochi inserti di dettaglio (porta, termostato, cucina, bagno) e ambienti vuoti; l'agente resta in scena per la maggior parte del reel.
 
@@ -137,8 +143,13 @@ Durata obiettivo 45–80 s (reference: 53 s e 76 s); oltre 90 s di parlato selez
 - **Filtro per piattaforma**: ogni traccia ha `piattaforme_consentite`. Il render chiede le piattaforme di destinazione (default `instagram, tiktok`) e sceglie solo tracce che le coprono tutte. Così si possono aggiungere altre fonti (per esempio Meta Sound Collection, valida solo per Facebook e Instagram) senza rischiare di usarle su TikTok.
 - **Content ID**: alcune tracce Pixabay sono registrate da chi le ha caricate su sistemi di riconoscimento e possono generare reclami. Mitigazione: libreria piccola e curata, tracce con reclami escluse in modo permanente (`Traccia.bloccata`).
 - **Consegna**: il file `LEGGIMI.txt` ricorda all'agente che, se pubblica su TikTok con un account Business, al caricamento deve confermare di avere i diritti sulla musica (Music Usage Confirmation) e non deve aggiungere musica dall'app.
+- Libreria: in `~/handover-work/lib/` (o `$HANDOVER_LIB`), con l'indice e la prova di licenza di ogni file. Sono ammessi anche SFX generati localmente con ffmpeg (toni, rumore filtrato: nessun diritto di terzi), come segnaposto finché non ci sono quelli scelti da Stefano. La musica generata resta fuori ambito (§1).
 - Musica: traccia dalla libreria scelta per mood (default `elegante | moderno | caldo`) e durata. Ducking in sidechain sotto la voce (circa −20 dB rispetto alla voce), fade-in 0,5 s, fade-out 1,5 s sulla chiusura.
-- SFX: whoosh all'ingresso dei b-roll, al massimo uno ogni 2 s, −12 dB rispetto alla voce.
+- SFX, al massimo uno ogni 2 s, −12 dB rispetto alla voce:
+  - **whoosh** sui tagli con movimento di camera (§6.3.4) e all'ingresso dei b-roll, che parte circa 0,2 s prima del taglio;
+  - **prezzo**: un accento (per esempio un "ding") quando compare il prezzo nei sottotitoli;
+  - **card di parola chiave**: un accento quando compare una card ("VILLA", §6.5).
+- **Loudness**: la normalizzazione a −14 LUFS e −1 dBTP si fa sul mix finale (voce + musica + SFX) dopo il render, con loudnorm di ffmpeg in due passate; il valore misurato finisce nel report del render.
 - Il tempo lo detta il parlato; i tagli dei b-roll si spostano di ±150 ms per cadere sul beat più vicino quando possibile.
 
 ### 6.5 Sottotitoli
@@ -187,9 +198,11 @@ Serve a replicare quello che fai già a mano: nel reel di Lissone ci sono transi
 
 ## 7. Piano di montaggio (contratto JSON)
 
+Versione corrente: **2** (rev. 8). Rispetto alla 1: `audio.sfx` (lista degli effetti, ancorati a un segmento), campi di fade in `audio.music`, `ending.fade_out_ms`; tolto `sfx` dai segmenti b-roll. Il render accetta solo la versione corrente.
+
 ```json
 {
-  "version": 1,
+  "version": 2,
   "shooting_id": "2026-11-14-bernareggio",
   "format": { "w": 1440, "h": 2560, "fps": 25 },
   "template": "venezia-v1",
@@ -210,8 +223,7 @@ Serve a replicare quello che fai già a mano: nel reel di Lissone ci sono transi
       "rotation": 90,
       "in_ms": 800, "out_ms": 3200,
       "room": "cucina",
-      "covers": "s1",
-      "sfx": "whoosh-03"
+      "covers": "s1"
     },
     {
       "id": "s3",
@@ -224,10 +236,16 @@ Serve a replicare quello che fai già a mano: nel reel di Lissone ci sono transi
     }
   ],
   "audio": {
-    "music": { "track": "lib/elegante/track-07.wav", "license_id": "L-0007", "gain_db": -20, "duck": true },
+    "music": { "track": "lib/musica/L-0007.wav", "license_id": "L-0007", "gain_db": -20, "duck": true,
+               "fade_in_ms": 500, "fade_out_ms": 1500 },
+    "sfx": [
+      { "kind": "whoosh", "file": "lib/sfx/S-0001.wav", "license_id": "S-0001", "segment": "s2", "offset_ms": -200, "gain_db": -12 },
+      { "kind": "prezzo", "file": "lib/sfx/S-0002.wav", "license_id": "S-0002", "segment": "s1", "offset_ms": 1500, "gain_db": -12 }
+    ],
     "voice_lufs": -14
   },
-  "end_card": true
+  "ending": { "fade_out_ms": 1200 },
+  "end_card": false
 }
 ```
 
@@ -235,7 +253,9 @@ Il piano è versionato: ogni rigenerazione crea una nuova versione e non sovrasc
 
 Note sul formato:
 - `words[].t` conserva la punteggiatura di Whisper ("Venezia.", "utile?"): il render la usa per spezzare i gruppi dei sottotitoli e la toglie a schermo, come il maiuscolo.
-- `audio.music` può essere `null` (M2: niente musica). Con `end_card: true` il render di M2 non mostra ancora la card finale: arriva con il template di brand (M3).
+- I percorsi (`track`, `file`) sono relativi alla cartella di lavoro dello shooting: i file usati vengono copiati dalla libreria in `lib/`, così il piano è autosufficiente.
+- `audio.sfx[].offset_ms` è relativo all'inizio del segmento indicato e può essere negativo (il whoosh parte prima del taglio).
+- `audio.music` può essere `null` (libreria senza musica: flag `musica_mancante`). Gli `in_ms` / `out_ms` dei segmenti includono già i movimenti di camera tenuti ai tagli e la coda per il fade.
 - Le informazioni per la review (token critici da confermare, take da confermare, flag) non stanno nel piano ma in `review.json`, accanto ai piani.
 
 ## 8. Review
@@ -263,7 +283,7 @@ Generazione(id, shooting_id, clip_sorgente_id nullable, prompt, modello, crediti
 Trascrizione(id, clip_id, words jsonb, modello)
 PianoMontaggio(id, shooting_id, versione, json, created_at)
 Render(id, piano_id, file_out, durata_ms, metriche jsonb, approvato bool)
-Traccia(id, file, tipo[musica|sfx], mood, bpm, durata_ms, fonte, licenza_id,
+Traccia(id, file, tipo[musica|sfx], mood, categoria[whoosh|prezzo|card], bpm, durata_ms, fonte, licenza_id,
         licenza_file, licenza_prova jsonb, piattaforme_consentite text[], bloccata bool)
 Job(id, tipo, ref_id, stato, tentativi, errore, created_at)
 ```
@@ -297,6 +317,9 @@ Job(id, tipo, ref_id, stato, tentativi, errore, created_at)
 | Due take ugualmente buone | Sceglie l'ultima, flag con l'alternativa ripristinabile |
 | Audio del parlato rovinato (vento, clipping) | Flag bloccante |
 | Libreria senza tracce del mood richiesto | Usa il mood di default, flag |
+| Libreria senza musica | Il render di prova procede senza musica; flag `musica_mancante`, bloccante per la consegna |
+| Libreria senza SFX di una categoria | Niente SFX di quella categoria, flag |
+| Clip senza movimento d'ingresso o d'uscita | Taglio netto, come oggi |
 | Download interrotto o file corrotti | Il file viene escluso, flag; il resto procede |
 | NEF High Efficiency (archivio o macchina non reimpostata) | Flag "imposta lossless"; conversione DNG se Adobe DNG Converter è installato |
 | Clip in N-Log o HLG | Esclusa, flag |
@@ -341,7 +364,7 @@ Misurati su un set di test di 10 shooting reali.
 | Spike | Decodifica di un NEF lossless reale · calibrazione distorsione Viltrox 9 mm · Whisper su 11.14 e 11.18 con confronto rispetto ai sottotitoli dei reel finiti · selezione delle take sulle clip reali · tempi sull'M1 | 1 settimana | Go/no-go su decodifica RAW, trascrizione e selezione |
 | M1 — Foto | Ingest, raggruppamento, fusione, finestre, geometria, coerenza, export | 1 settimana | Foto pronte dal primo shooting |
 | M2 — Parlato | Trascrizione, take, A-roll, sottotitoli, render base | 2 settimane | Reel con solo A-roll e sottotitoli |
-| M3 — B-roll e audio | Etichette ambienti, copertura dei tagli, musica, ducking, SFX | 1 settimana | Reel completo |
+| M3 — B-roll e audio | Movimenti di camera ai tagli, stabilizzazione, fade di chiusura, libreria con musica e SFX, ducking, loudness; poi etichette ambienti e copertura dei tagli con b-roll | 1–2 settimane | Reel completo |
 | M4 — Review | Pagina di review, token critici, glossario, consegna | 1 settimana | Flusso end-to-end |
 | M5 — Clip generate | Sessione Claude Code + MCP Artlist, scelta dei fotogrammi, stima costi, segmenti `generated` con sovrimpressione | 1 settimana | Home staging virtuale nel reel |
 
